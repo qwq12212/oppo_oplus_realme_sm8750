@@ -105,6 +105,15 @@ jobs:
             git libelf-dev libssl-dev libxml2-utils lzop pngcrush rsync \
             schedtool squashfs-tools xz-utils zip zlib1g-dev libarchive-tools aria2
 
+      - name: 初始化 ccache 环境（修复 command not found）
+        run: |
+          sudo mkdir -p /usr/lib/ccache
+          sudo ln -sf /usr/bin/ccache /usr/lib/ccache/clang
+          sudo ln -sf /usr/bin/ccache /usr/lib/ccache/gcc
+          sudo ln -sf /usr/bin/ccache /usr/lib/ccache/g++
+          echo "PATH=/usr/lib/ccache:$PATH" >> $GITHUB_ENV
+          ccache --version
+
       - name: 初始化源码仓库及llvm-Clang18工具链
         run: |
           rm -rf kernel_workspace
@@ -143,7 +152,6 @@ jobs:
             sed -i 's/ -dirty//g' "$f"
             sed -i '$i res=$(echo "$res" | sed '\''s/-dirty//g'\'')' "$f"
           done
-
       - name: 配置ccache目录
         run: |
           echo "CCACHE_DIR=$HOME/.ccache_${{ env.KERNEL_VERSION }}.${{ env.SUB_VERSION }}" >> $GITHUB_ENV
@@ -151,7 +159,6 @@ jobs:
           echo "当前磁盘空间："
           df -h
           echo "当前构建内核版本：${{ env.KERNEL_VERSION }}.${{ env.SUB_VERSION }}"
-
       - name: 载入当前版本内核的 ccache缓存
         uses: actions/cache@v5
         id: ccache-restore
@@ -161,7 +168,6 @@ jobs:
           restore-keys: |
             ${{ env.CCACHE_KEY }}-${{ runner.os }}-
             ${{ env.CCACHE_KEY }}-
-
       - name: 拉取公共预置 ccache 缓存
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -183,7 +189,6 @@ jobs:
           else
             echo "公共 ccache 中未找到对应的 ccache 文件，将进行全量全新编译..."
           fi
-
       - name: 清除旧 ccache 缓存
         if: inputs.ccache_update
         env:
@@ -218,7 +223,6 @@ jobs:
             echo "ccache缓存命中详情:"
             ccache -sv
           fi
-
       - name: 添加KernelSU
         id: ksu_version
         run: |
@@ -275,11 +279,10 @@ jobs:
             KSU_VERSION=$(expr $(curl -sI "https://api.github.com/repos/tiann/KernelSU/commits?sha=main&per_page=1" | grep -i "link:" | sed -n 's/.*page=\([0-9]*\)>; rel="last".*/\1/p') "+" 30000)
             echo "KSUVER=$KSU_VERSION" >> $GITHUB_ENV
             echo "ksuver=$KSU_VERSION" >> $GITHUB_OUTPUT
-            sed -i "s/DKSU_VERSION=16/DKSU_VERSION=${KSU_VERSION}/" kernel/Kbuild
+            sed -i "s/DKSU_VERSION=16/DKSU_VERSION=${KSU_VERSION}/g" kernel/Kbuild
           else
             echo "已选择无内置KernelSU模式，跳过KernelSU配置..."
           fi
-
       - name: 应用 KernelSU & SUSFS 补丁
         if: inputs.susfs_enable
         run: |
@@ -388,7 +391,9 @@ jobs:
           echo "CONFIG_NETFILTER_XT_MATCH_ADDRTYPE=y" >> ./common/arch/arm64/configs/gki_defconfig
           echo "CONFIG_NETFILTER_XT_SET=y" >> ./common/arch/arm64/configs/gki_defconfig
           echo "CONFIG_IP_SET=y" >> ./common/arch/arm64/configs/gki_defconfig
-          echo "CONFIG_IP_SET_MAX=65534" >> ./common/arch/arm64/configs/gki_def echo "CONFIG_IP_SET_BITMAP_IPMAC=y" >> ./common/arch/arm64/configs/gki_defconfig
+          echo "CONFIG_IP_SET_MAX=65534" >> ./common/arch/arm64/configs/gki_defconfig
+          echo "CONFIG_IP_SET_BITMAP_IP=y" >> ./common/arch/arm64/configs/gki_defconfig
+          echo "CONFIG_IP_SET_BITMAP_IPMAC=y" >> ./common/arch/arm64/configs/gki_defconfig
           echo "CONFIG_IP_SET_BITMAP_PORT=y" >> ./common/arch/arm64/configs/gki_defconfig
           echo "CONFIG_IP_SET_HASH_IP=y" >> ./common/arch/arm64/configs/gki_defconfig
           echo "CONFIG_IP_SET_HASH_IPMARK=y" >> ./common/arch/arm64/configs/gki_defconfig
@@ -492,7 +497,6 @@ jobs:
           echo "CONFIG_CGROUP_DEVICE=y" >> ./common/arch/arm64/configs/gki_defconfig
           echo "CONFIG_CGROUP_PIDS=y" >> ./common/arch/arm64/configs/gki_defconfig
           echo "CONFIG_MEMCG=y" >> ./common/arch/arm64/configs/gki_defconfig
-
       - name: 构建内核
         run: |
           WORKDIR="$(pwd)"
@@ -556,7 +560,6 @@ jobs:
           echo "内核编译完成！"
           ccache -s
           df -h
-
       - name: 保存新的 ccache 缓存
         if: inputs.ccache_update || steps.ccache-restore.outputs.cache-hit != 'true'
         uses: actions/cache/save@v5
@@ -658,7 +661,6 @@ jobs:
         with:
           path: ${{ github.workspace }}/kernel_workspace/AnyKernel*.zip
           archive: false
-
   release:
     needs: build
     runs-on: ubuntu-latest
