@@ -98,7 +98,14 @@ jobs:
       actions: write
       contents: read
     steps:
-      - name: 安装环境依赖+初始化源码仓库及llvm-Clang18工具链
+      - name: 安装环境依赖（含ccache）
+        run: |
+          sudo apt update && sudo apt install -y \
+            bc bison build-essential ccache curl flex g++-multilib gcc-multilib \
+            git libelf-dev libssl-dev libxml2-utils lzop pngcrush rsync \
+            schedtool squashfs-tools xz-utils zip zlib1g-dev libarchive-tools aria2
+
+      - name: 初始化源码仓库及llvm-Clang18工具链
         run: |
           rm -rf kernel_workspace
           mkdir kernel_workspace
@@ -109,14 +116,7 @@ jobs:
           sudo apt-mark hold firefox &&
           sudo apt-mark hold libc-bin &&
           sudo apt purge man-db &&
-          sudo rm -rf /var/lib/man-db/auto-update &&
-          sudo apt update &&
-          sudo apt-get install -y --no-install-recommends binutils python-is-python3 libssl-dev libelf-dev &
-          
-          wget https://github.com/$GITHUB_REPOSITORY/raw/refs/heads/$GITHUB_REF_NAME/lib/ccache-x86_64 -O ccache &&
-          sudo cp -f ./ccache /usr/bin/ccache &&
-          sudo chmod +x /usr/bin/ccache &&
-          rm -f ./ccache &
+          sudo rm -rf /var/lib/man-db/auto-update
           
           echo "正在克隆源码仓库..."
           aria2c -s16 -x16 -k1M https://github.com/cctv18/android_kernel_common_oneplus_sm8750/archive/refs/heads/oneplus/sm8750_v_15.0.1_pad_2_pro.zip -o common.zip && 
@@ -143,6 +143,7 @@ jobs:
             sed -i 's/ -dirty//g' "$f"
             sed -i '$i res=$(echo "$res" | sed '\''s/-dirty//g'\'')' "$f"
           done
+
       - name: 配置ccache目录
         run: |
           echo "CCACHE_DIR=$HOME/.ccache_${{ env.KERNEL_VERSION }}.${{ env.SUB_VERSION }}" >> $GITHUB_ENV
@@ -150,6 +151,7 @@ jobs:
           echo "当前磁盘空间："
           df -h
           echo "当前构建内核版本：${{ env.KERNEL_VERSION }}.${{ env.SUB_VERSION }}"
+
       - name: 载入当前版本内核的 ccache缓存
         uses: actions/cache@v5
         id: ccache-restore
@@ -159,6 +161,7 @@ jobs:
           restore-keys: |
             ${{ env.CCACHE_KEY }}-${{ runner.os }}-
             ${{ env.CCACHE_KEY }}-
+
       - name: 拉取公共预置 ccache 缓存
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -180,6 +183,7 @@ jobs:
           else
             echo "公共 ccache 中未找到对应的 ccache 文件，将进行全量全新编译..."
           fi
+
       - name: 清除旧 ccache 缓存
         if: inputs.ccache_update
         env:
@@ -215,7 +219,6 @@ jobs:
             ccache -sv
           fi
 
-      # ===================== 【核心修复：进入common目录执行KSU安装】 =====================
       - name: 添加KernelSU
         id: ksu_version
         run: |
@@ -349,7 +352,6 @@ jobs:
           echo "CONFIG_KSU_SUSFS_OPEN_REDIRECT=y" >> ./common/arch/arm64/configs/gki_defconfig
           echo "CONFIG_KSU_SUSFS_SUS_MAP=y" >> ./common/arch/arm64/configs/gki_defconfig
           
-      # ===================== 【核心修复：补上HOOK配置，解决链接错误】 =====================
       - name: 添加 KSU & 其他配置项
         run: |
           cd kernel_workspace
@@ -386,9 +388,7 @@ jobs:
           echo "CONFIG_NETFILTER_XT_MATCH_ADDRTYPE=y" >> ./common/arch/arm64/configs/gki_defconfig
           echo "CONFIG_NETFILTER_XT_SET=y" >> ./common/arch/arm64/configs/gki_defconfig
           echo "CONFIG_IP_SET=y" >> ./common/arch/arm64/configs/gki_defconfig
-          echo "CONFIG_IP_SET_MAX=65534" >> ./common/arch/arm64/configs/gki_defconfig
-          echo "CONFIG_IP_SET_BITMAP_IP=y" >> ./common/arch/arm64/configs/gki_defconfig
-          echo "CONFIG_IP_SET_BITMAP_IPMAC=y" >> ./common/arch/arm64/configs/gki_defconfig
+          echo "CONFIG_IP_SET_MAX=65534" >> ./common/arch/arm64/configs/gki_def echo "CONFIG_IP_SET_BITMAP_IPMAC=y" >> ./common/arch/arm64/configs/gki_defconfig
           echo "CONFIG_IP_SET_BITMAP_PORT=y" >> ./common/arch/arm64/configs/gki_defconfig
           echo "CONFIG_IP_SET_HASH_IP=y" >> ./common/arch/arm64/configs/gki_defconfig
           echo "CONFIG_IP_SET_HASH_IPMARK=y" >> ./common/arch/arm64/configs/gki_defconfig
@@ -493,7 +493,6 @@ jobs:
           echo "CONFIG_CGROUP_PIDS=y" >> ./common/arch/arm64/configs/gki_defconfig
           echo "CONFIG_MEMCG=y" >> ./common/arch/arm64/configs/gki_defconfig
 
-      # ===================== 【构建步骤保持不变，已兼容修复】 =====================
       - name: 构建内核
         run: |
           WORKDIR="$(pwd)"
@@ -728,6 +727,7 @@ jobs:
           - 修复KernelSU链接错误(ksu_init_rc_hook_key_false等)
           - 修复KSU安装路径错误
           - 补充缺失的HOOK配置
+          - 修复ccache命令未找到错误
           - 更新${{ env.KSU_TYPENAME }}至最新版本（${{ needs.build.outputs.ksuver }}）
           
           ### 📋 安装方法
